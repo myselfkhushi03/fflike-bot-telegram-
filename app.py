@@ -74,10 +74,29 @@ TIMEZONE = timezone("Asia/Kolkata")
 USER_DAILY_LIMIT = int(os.getenv("USER_DAILY_LIMIT", "1"))
 USER_USAGE = {}
 
+# ================= 📁 ADMIN DATA MANAGEMENT =================
+
+def load_admin_data():
+    try:
+        with open(ADMIN_DATA_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {"admins": [], "admin_limits": {}}
+
+def save_admin_data(data):
+    with open(ADMIN_DATA_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+def is_admin(user_id):
+    if user_id in OWNER_IDS:
+        return True
+    admin_data = load_admin_data()
+    return user_id in admin_data.get("admins", [])
+
 # ================= 🚀 GITHUB AUTO UPDATE FUNCTIONS =================
 
 async def push_to_github(file_content_str: str) -> bool:
-    """GitHub Repository me token.json update karne ka function"""
+    """GitHub Repository me token_ind.json update karne ka function"""
     if not GITHUB_TOKEN or not GITHUB_REPO:
         logger.error("GitHub Configuration (GITHUB_TOKEN or GITHUB_REPO) is missing!")
         return False
@@ -125,7 +144,7 @@ async def auto_update_tokens_task(context: ContextTypes.DEFAULT_TYPE):
                 pwd = acc.get("password") or acc.get("pwd")
                 if not uid or not pwd:
                     continue
-                
+
                 url = TOKEN_GEN_API_URL.format(uid=uid, pwd=pwd)
                 try:
                     async with session.get(url, timeout=15) as res:
@@ -158,9 +177,9 @@ async def auto_update_tokens_task(context: ContextTypes.DEFAULT_TYPE):
 # ================= 🎛️ AUTO COMMAND HANDLERS =================
 
 async def start_auto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Command: /startauto -> Har 3 ghante me auto update chalu karega"""
-    if not await is_owner(update):
-        await update.message.reply_text("🚫 Owner Only")
+    """Command: /startauto -> Har 3 ghante me auto update chalu karega (Admin & Owner)"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 Admin Only Command")
         return
 
     if scheduler.get_job(AUTO_JOB_ID):
@@ -186,9 +205,9 @@ async def start_auto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def stop_auto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Command: /stopauto -> Auto update process stop kar dega"""
-    if not await is_owner(update):
-        await update.message.reply_text("🚫 Owner Only")
+    """Command: /stopauto -> Auto update process stop kar dega (Admin & Owner)"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("🚫 Admin Only Command")
         return
 
     job = scheduler.get_job(AUTO_JOB_ID)
@@ -197,25 +216,6 @@ async def stop_auto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🛑 **Auto Update Process STOPPED successfully!**", parse_mode="Markdown")
     else:
         await update.message.reply_text("⚠️ **Auto Update active nahi tha.**", parse_mode="Markdown")
-
-# ================= 📁 ADMIN DATA MANAGEMENT =================
-
-def load_admin_data():
-    try:
-        with open(ADMIN_DATA_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {"admins": [], "admin_limits": {}}
-
-def save_admin_data(data):
-    with open(ADMIN_DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-def is_admin(user_id):
-    if user_id in OWNER_IDS:
-        return True
-    admin_data = load_admin_data()
-    return user_id in admin_data.get("admins", [])
 
 # ================= 📁 GROUP DATA MANAGEMENT =================
 
@@ -325,7 +325,10 @@ async def runall_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔄 Manual auto-like triggered...")
     await perform_auto_like(context.application, manual=True)
 
-async def set_bot_commands(application):
+# ================= 🚀 MAIN FUNCTION =================
+
+async def post_init_setup(application):
+    """Bot Init hone ke baad Event Loop ke andar Scheduler start hoga"""
     commands = [
         BotCommand("startauto", "Start Auto 3-Hour GitHub Token Update"),
         BotCommand("stopauto", "Stop Auto Token Update"),
@@ -334,25 +337,22 @@ async def set_bot_commands(application):
     ]
     await application.bot.set_my_commands(commands)
 
-# ================= 🚀 MAIN FUNCTION =================
+    # Event loop ready hone ke baad scheduler start hoga (No RuntimeError)
+    if not scheduler.running:
+        scheduler.start()
+        logger.info("APScheduler started inside event loop successfully!")
 
 def main():
     if not BOT_TOKEN:
         logger.error("BOT_TOKEN missing in environment variables!")
         return
 
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    
+    app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init_setup).build()
+
     # Register Commands
     app.add_handler(CommandHandler("startauto", start_auto_cmd))
     app.add_handler(CommandHandler("stopauto", stop_auto_cmd))
     app.add_handler(CommandHandler("runall", runall_cmd))
-
-    # Set Menu Commands
-    app.post_init = set_bot_commands
-
-    # Start Scheduler
-    scheduler.start()
 
     logger.info("Bot started successfully with Auto-Update Scheduler...")
     app.run_polling(drop_pending_updates=True)
