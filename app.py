@@ -57,7 +57,7 @@ TOKEN_GEN_API_URL = os.getenv("TOKEN_GEN_API_URL", "https://vipjwt.ffbot.site/to
 # GitHub Settings
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")  # Format: "username/repo_name"
-FILE_PATH_IN_REPO = os.getenv("FILE_PATH_IN_REPO", "token.json")
+FILE_PATH_IN_REPO = os.getenv("FILE_PATH_IN_REPO", "token_ind.json")
 
 # Scheduler Setup for 3-Hour Auto Task
 scheduler = AsyncIOScheduler()
